@@ -1,0 +1,8 @@
+backend/
+frontend/
+db/
+listner/
+test/
+.oldgit/
+.env
+.docker/

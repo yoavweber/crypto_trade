@@ -1,0 +1,131 @@
+
+version: '3.7'
+
+services:
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    # volumes:
+    #     - ./.docker/rabbitmq/etc/:/etc/rabbitmq/
+    #     - ./.docker/rabbitmq/data/:/var/lib/rabbitmq/
+    #     - ./.docker/rabbitmq/logs/:/var/log/rabbitmq/
+    ports:
+            - 5671:5672
+            - 15671:15672
+  backend: 
+    build: ./backend  #build the image for the web service from the dockerfile in parent directory.
+    image: backend # name of the image
+    command: sh -c "python manage.py makemigrations &&
+                    python manage.py migrate &&
+                    python manage.py runserver 0.0.0.0:8000 &&
+                    python consumer.py "
+                    # python manage.py runserver"
+                    # gunicorn backend.wsgi:application --bind 127.0.0.1:8000" # Django commands to run app using gunicorn
+    volumes:
+      - ./backend/:/srv/app
+      - static_volume:/app/backend/server/django_static
+      - db_volume:/db
+    env_file:
+      - .env 
+    ports: 
+      - "8000:8000"
+    restart: "on-failure"
+    depends_on: 
+      - redis
+      - rabbitmq
+    networks:
+      node_net:
+        ipv4_address: 172.28.1.7
+
+  backendConsumer:
+    build: ./backend  #build the image for the web service from the dockerfile in parent directory.
+    image: backend # name of the image
+    command: sh -c "
+                    python consumer.py "
+                    # python manage.py runserver"
+                    # gunicorn backend.wsgi:application --bind 127.0.0.1:8000" # Django commands to run app using gunicorn
+    volumes:
+      - db_volume:/db
+    env_file:
+      - .env 
+    restart: "on-failure"
+    networks:
+      node_net:
+        ipv4_address: 172.28.1.6
+
+    depends_on: 
+      - redis
+      - rabbitmq
+      - backend
+
+  frontend:
+    build: ./frontend
+    image: frontend
+    volumes:
+      - static_volume:/app/backend/server/django_static
+      - db_volume:/db
+
+    ports:
+      - "3001:80" 
+    restart: "on-failure"
+    depends_on: 
+      - backend
+    networks:
+      node_net:
+        ipv4_address: 172.28.1.5
+  
+  listner:
+    build: ./crypto_listner
+    image: listner
+    env_file:
+      - .env 
+    volumes:
+      - db_volume:/db
+    # depends_on: 
+    #   - backend
+    depends_on: 
+      - redis
+      - rabbitmq
+    restart: "on-failure"
+    networks:
+      node_net:
+        ipv4_address: 172.28.1.3
+
+  redis:
+    image: redis:6.2-alpine 
+    restart: always
+    # command: redis-server --save 20 1 --loglevel warning
+    volumes: 
+      - redis:/data
+    ports:
+      - '6378:6379'
+    networks:
+      node_net:
+        ipv4_address: 172.28.1.4
+
+
+    
+
+  # db: # service name
+  #   image: nouchka/sqlite3:latest
+  #   stdin_open: true
+  #   tty: true    
+  #   volumes:
+  #     - db_volume:/db
+  #   ports:
+  #     - "9000:9000"
+  #   restart: "unless-stopped"
+  
+networks:
+  node_net:
+    ipam:
+      driver: default
+      config:
+        - subnet: 172.28.0.0/16
+
+volumes:
+  redis:
+    driver: local
+  db_volume:
+  static_volume:
+  rabbitmq:
+  rabbitmq_logs:
